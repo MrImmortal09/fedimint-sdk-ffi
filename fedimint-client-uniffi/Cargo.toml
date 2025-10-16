@@ -1,0 +1,34 @@
+[package]
+name = "fedimint-client-uniffi"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["The Fedimint Developers"]
+description = "fedimint client for uniffi"
+readme = "README.md"
+repository = "https://github.com/fedimint/fedimint"
+[lib]
+crate-type = ["staticlib", "cdylib", "lib"]
+name = "fedimint_client_uniffi"
+path = "src/lib.rs"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+[dependencies]
+anyhow = "1.0.98"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.141"
+socket2 = { version = "0.5.7", features = ["all"] }
+thiserror = "2.0.12"
+tokio = "1.48.0"
+uniffi = { version = "0.29", features = ["cli"] }
+# Using fedimint-ffi branch for all fedimint dependencies
+fedimint-client-rpc = { git = "https://github.com/MrImmortal09/fedimint", branch = "fedimint-ffi" }
+fedimint-connectors = { git = "https://github.com/MrImmortal09/fedimint", branch = "fedimint-ffi" }
+fedimint-core = { git = "https://github.com/MrImmortal09/fedimint", branch = "fedimint-ffi" }
+fedimint-db-locked = { git = "https://github.com/MrImmortal09/fedimint", branch = "fedimint-ffi" }
+fedimint-rocksdb = { git = "https://github.com/MrImmortal09/fedimint", branch = "fedimint-ffi" }
+[build-dependencies]
+uniffi = { version = "0.29", features = ["build"] }
+fedimint-build = { git = "https://github.com/MrImmortal09/fedimint", branch = "fedimint-ffi" }
