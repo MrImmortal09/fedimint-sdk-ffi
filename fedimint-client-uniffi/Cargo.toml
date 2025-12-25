@@ -7,6 +7,7 @@ authors = ["The Fedimint Developers"]
 description = "fedimint client for uniffi"
 readme = "README.md"
 repository = "https://github.com/fedimint/fedimint"
+
 [lib]
 crate-type = ["staticlib", "cdylib", "lib"]
 name = "fedimint_client_uniffi"
@@ -15,6 +16,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
+
 [dependencies]
 anyhow = "1.0.98"
 serde = { version = "1.0.219", features = ["derive"] }
