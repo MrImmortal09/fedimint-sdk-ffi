@@ -34,3 +34,4 @@ fedimint-rocksdb = { git = "https://github.com/MrImmortal09/fedimint", branch = 
 [build-dependencies]
 uniffi = { version = "0.29", features = ["build"] }
 fedimint-build = { git = "https://github.com/MrImmortal09/fedimint", branch = "fedimint-ffi" }
+
