@@ -19,22 +19,21 @@ path = "uniffi-bindgen.rs"
 
 [dependencies]
 anyhow = "1.0.98"
+fedimint-client-rpc = { version = "0.10.0" }
+fedimint-connectors = { version = "0.10.0" }
+fedimint-core = { version = "0.10.0" }
+fedimint-db-locked = { version = "0.10.0" }
+fedimint-rocksdb = { version = "0.10.0" }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.141"
 socket2 = { version = "0.5.7", features = ["all"] }
 thiserror = "2.0.12"
 tokio = "1.48.0"
 uniffi = { version = "0.29", features = ["cli"] }
-# Using fedimint-ffi branch for all fedimint dependencies
-fedimint-client-rpc = { git = "https://github.com/MrImmortal09/fedimint", branch = "fedimint-ffi" }
-fedimint-connectors = { git = "https://github.com/MrImmortal09/fedimint", branch = "fedimint-ffi" }
-fedimint-core = { git = "https://github.com/MrImmortal09/fedimint", branch = "fedimint-ffi" }
-fedimint-db-locked = { git = "https://github.com/MrImmortal09/fedimint", branch = "fedimint-ffi" }
-fedimint-rocksdb = { git = "https://github.com/MrImmortal09/fedimint", branch = "fedimint-ffi" }
 
 [build-dependencies]
+fedimint-build = { version= "0.10.0" }
 uniffi = { version = "0.29", features = ["build"] }
-fedimint-build = { git = "https://github.com/MrImmortal09/fedimint", branch = "fedimint-ffi" }
 
 [profile.release]
 opt-level = 'z'     # Optimize for size.
