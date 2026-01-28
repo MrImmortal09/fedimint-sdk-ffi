@@ -1621,6 +1621,7 @@ dependencies = [
  "fedimint-core",
  "fedimint-db-locked",
  "fedimint-rocksdb",
+ "glob",
  "serde",
  "serde_json",
  "socket2 0.5.10",
@@ -6237,6 +6238,7 @@ dependencies = [
  "uniffi_internal_macros",
  "uniffi_meta",
  "uniffi_pipeline",
+ "uniffi_testing",
  "uniffi_udl",
 ]
 
@@ -6258,6 +6260,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f38a9a27529ccff732f8efddb831b65b1e07f7dea3fd4cacd4a35a8c4b253b98"
 dependencies = [
  "anyhow",
+ "async-compat",
  "bytes",
  "once_cell",
  "static_assertions",
@@ -6316,6 +6319,19 @@ dependencies = [
  "indexmap",
  "tempfile",
  "uniffi_internal_macros",
+]
+
+[[package]]
+name = "uniffi_testing"
+version = "0.29.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de559b1c057a704080f320c204dfe611c68034c801fc9b86a83d36b565ca7482"
+dependencies = [
+ "anyhow",
+ "camino",
+ "cargo_metadata",
+ "fs-err",
+ "once_cell",
 ]
 
 [[package]]

@@ -33,6 +33,7 @@ uniffi = { version = "0.29", features = ["bindgen-tests", "cli", "tokio"] }
 
 [build-dependencies]
 fedimint-build = { version= "0.10.0" }
+glob = "0.3.1"
 uniffi = { version = "0.29", features = ["build"] }
 
 [profile.release]
