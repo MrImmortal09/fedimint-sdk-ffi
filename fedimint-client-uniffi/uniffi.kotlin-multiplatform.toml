@@ -1,0 +1,7 @@
+# Kotlin Multi Platform https://gobley.dev/docs/bindgen#bindgen-configuration
+package_name = "org.fedimint.client.uniffi"
+cdylib_name = "fedimint_client_uniffi"
+kotlin_multiplatform = true
+kotlin_targets = ["jvm", "android", "native"]
+kotlin_target_version = "1.9.21"
+disable_java_cleaner = true

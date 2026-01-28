@@ -1,7 +1,10 @@
 [bindings.kotlin]
-package_name = "org.fedimint"
+package_name = "org.fedimint.client.uniffi"
 cdylib_name = "fedimint_client_uniffi"
+disable_java_cleaner = true
 
 [bindings.swift]
 module_name = "Fedimint"
 cdylib_name = "fedimint_client_uniffi"
+ffi_module_name = "FedimintFFI"
+
