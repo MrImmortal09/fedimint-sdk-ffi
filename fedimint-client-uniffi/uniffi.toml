@@ -1,5 +1,4 @@
 [bindings.kotlin]
-package_name = "org.fedimint"
 cdylib_name = "fedimint_client_uniffi"
 
 [bindings.swift]

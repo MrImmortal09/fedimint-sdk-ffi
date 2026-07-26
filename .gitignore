@@ -36,3 +36,6 @@ DerivedData/
 Info.plist
 Sources/
 xcuserdata
+
+# Web
+/target-web

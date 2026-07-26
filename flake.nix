@@ -308,11 +308,69 @@
             // lib.mapAttrs' (t: drv: lib.nameValuePair "ios-${t}" drv) iosPerTargetBuilds
           );
 
-        devShells.default = pkgs.mkShell {
-          nativeBuildInputs = [
-            toolchain.toolchain
-            androidSdk
-          ];
+        devShells = {
+          default = pkgs.mkShell {
+            nativeBuildInputs = [
+              toolchain.toolchain
+              androidSdk
+            ];
+          };
+
+          android = pkgs.mkShell {
+            LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+            nativeBuildInputs = [
+              toolchain.toolchain
+              androidSdk
+              pkgs.cmake
+              pkgs.gnumake
+              pkgs.go
+              pkgs.cargo-ndk
+              pkgs.libclang
+            ];
+            shellHook = ''
+              if [ -d "${androidSdk}/libexec/android-sdk" ]; then
+                export ANDROID_HOME="${androidSdk}/libexec/android-sdk"
+              elif [ -d "${androidSdk}/share/android-sdk" ]; then
+                export ANDROID_HOME="${androidSdk}/share/android-sdk"
+              else
+                export ANDROID_HOME="${androidSdk}"
+              fi
+
+              export ANDROID_SDK_ROOT="$ANDROID_HOME"
+
+              if [ -d "$ANDROID_HOME/ndk-bundle" ]; then
+                export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk-bundle"
+              elif [ -d "$ANDROID_HOME/ndk" ]; then
+                export ANDROID_NDK_ROOT="$(ls -d "$ANDROID_HOME"/ndk/* | head -n 1)"
+              fi
+
+              export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+              export NDK_HOME="$ANDROID_NDK_ROOT"
+              export ROCKSDB_STATIC=1
+
+              if [ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt" ]; then
+                NDK_PREBUILT="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt"
+                HOST_TAG="$(ls "$NDK_PREBUILT" | head -n 1)"
+                TOOLCHAIN="$NDK_PREBUILT/$HOST_TAG"
+
+                CLANG_VER="$(ls "$TOOLCHAIN"/lib/clang/ | head -n 1)"
+                if [ -z "$CLANG_VER" ] && [ -d "$TOOLCHAIN/lib64/clang" ]; then
+                  CLANG_VER="$(ls "$TOOLCHAIN"/lib64/clang/ | head -n 1)"
+                fi
+
+                export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--sysroot=$TOOLCHAIN/sysroot -I$TOOLCHAIN/lib/clang/$CLANG_VER/include -I$TOOLCHAIN/lib64/clang/$CLANG_VER/include"
+                export BINDGEN_EXTRA_CLANG_ARGS_x86_64_linux_android="--sysroot=$TOOLCHAIN/sysroot -I$TOOLCHAIN/lib/clang/$CLANG_VER/include -I$TOOLCHAIN/lib64/clang/$CLANG_VER/include"
+                export BINDGEN_EXTRA_CLANG_ARGS_armv7_linux_androideabi="--sysroot=$TOOLCHAIN/sysroot -I$TOOLCHAIN/lib/clang/$CLANG_VER/include -I$TOOLCHAIN/lib64/clang/$CLANG_VER/include"
+                export BINDGEN_EXTRA_CLANG_ARGS_i686_linux_android="--sysroot=$TOOLCHAIN/sysroot -I$TOOLCHAIN/lib/clang/$CLANG_VER/include -I$TOOLCHAIN/lib64/clang/$CLANG_VER/include"
+
+                if [ -f "$TOOLCHAIN/bin/clang" ]; then
+                  export CLANG_PATH="$TOOLCHAIN/bin/clang"
+                fi
+              fi
+
+              echo "Android shell ready. Use scripts/generate-android-so.sh to build JNI .so files."
+            '';
+          };
         };
       }
     );

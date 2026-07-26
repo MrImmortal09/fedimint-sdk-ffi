@@ -25,33 +25,29 @@ tokio-multi-thread = ["tokio/rt-multi-thread"]
 [dependencies]
 anyhow = "1.0.98"
 async-stream = "0.3"
-
-
-fedimint-bip39 = { git = "https://github.com/MrImmortal09/fedimint", branch = "om/major-uniffi-bump" }
-fedimint-client = { git = "https://github.com/MrImmortal09/fedimint", branch = "om/major-uniffi-bump", features = ["uniffi"] }
-fedimint-connectors = { git = "https://github.com/MrImmortal09/fedimint", branch = "om/major-uniffi-bump" }
-fedimint-core = { git = "https://github.com/MrImmortal09/fedimint", branch = "om/major-uniffi-bump" }
-fedimint-derive-secret = { git = "https://github.com/MrImmortal09/fedimint", branch = "om/major-uniffi-bump" }
-fedimint-ln-client = { git = "https://github.com/MrImmortal09/fedimint", branch = "om/major-uniffi-bump", features = ["uniffi"] }
-fedimint-meta-client = { git = "https://github.com/MrImmortal09/fedimint", branch = "om/major-uniffi-bump", features = ["uniffi"] }
-fedimint-mint-client = { git = "https://github.com/MrImmortal09/fedimint", branch = "om/major-uniffi-bump", features = ["uniffi"] }
-fedimint-wallet-client = { git = "https://github.com/MrImmortal09/fedimint", branch = "om/major-uniffi-bump", features = ["uniffi"] }
+fedimint-bip39 = { path = "../../../fedimint/fedimint-bip39" }
+fedimint-client = { path = "../../../fedimint/fedimint-client", features = ["uniffi"] }
+fedimint-connectors = { path = "../../../fedimint/fedimint-connectors" }
+fedimint-core = { path = "../../../fedimint/fedimint-core", features = ["uniffi"] }
+fedimint-derive-secret = { path = "../../../fedimint/crypto/derive-secret" }
+fedimint-ln-client = { path = "../../../fedimint/modules/fedimint-ln-client", features = ["uniffi"] }
+fedimint-meta-client = { path = "../../../fedimint/modules/fedimint-meta-client", features = ["uniffi"] }
+fedimint-mint-client = { path = "../../../fedimint/modules/fedimint-mint-client", features = ["uniffi"] }
+fedimint-wallet-client = { path = "../../../fedimint/modules/fedimint-wallet-client", features = ["uniffi"] }
 futures = "0.3"
 rand = "0.8"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.141"
 thiserror = "2.0.12"
 log = "0.4"
 tracing = "0.1"
-uniffi = { version = "0.31.1", features = ["cli", "tokio"] }
+uniffi = { version = "0.32.0", features = ["cli", "tokio"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-fedimint-rocksdb = { git = "https://github.com/MrImmortal09/fedimint", branch = "om/major-uniffi-bump" }
+fedimint-rocksdb = { path = "../../../fedimint/fedimint-rocksdb" }
 socket2 = { version = "0.5.7", features = ["all"] }
 tokio = { version = "1.48.0", default-features = false, features = ["sync", "rt-multi-thread", "fs"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-fedimint-cursed-redb = { git = "https://github.com/MrImmortal09/fedimint", branch = "om/major-uniffi-bump" }
+fedimint-cursed-redb = { path = "../../../fedimint/fedimint-cursed-redb" }
 tokio = { version = "1.48.0", default-features = false, features = ["sync", "rt", "macros", "time", "io-util"] }
 
 [target.'cfg(target_os = "android")'.dependencies] 
@@ -59,8 +55,8 @@ android_logger = "0.14"
 
 [build-dependencies]
 cc = "1"
-fedimint-build = { git = "https://github.com/MrImmortal09/fedimint", branch = "om/major-uniffi-bump" }
-uniffi = { version = "0.31.1", features = ["build"] }
+fedimint-build = { path = "../../../fedimint/fedimint-build" }
+uniffi = { version = "0.32.0", features = ["build"] }
 
 [profile.release]
 opt-level = 'z'     # Optimize for size.

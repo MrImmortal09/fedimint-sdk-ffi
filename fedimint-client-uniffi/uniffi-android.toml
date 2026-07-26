@@ -1,3 +1,3 @@
-[bindings.kotlin]
+[defaults.kotlin]
 android = true
 android_cleaner = true

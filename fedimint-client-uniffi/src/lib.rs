@@ -16,7 +16,7 @@ use fedimint_bip39::{Bip39RootSecretStrategy, Mnemonic};
 use fedimint_client::secret::RootSecretStrategy;
 use fedimint_client::{ClientHandle, ClientHandleArc, ClientPreview, RootSecret};
 use fedimint_connectors::ConnectorRegistry;
-use fedimint_core::config::FederationId;
+use fedimint_core::config::{ClientConfig, FederationId};
 use fedimint_core::db::{Database, IDatabaseTransactionOpsCoreTyped};
 use fedimint_core::encoding::{Decodable, Encodable};
 use fedimint_core::impl_db_record;
@@ -28,6 +28,12 @@ use fedimint_mint_client::MintClientInit;
 use fedimint_wallet_client::WalletClientInit;
 use log::{debug, error, info, warn};
 use tokio::sync::Mutex;
+
+mod runtime;
+
+use runtime::ffi_export_async;
+#[cfg(not(target_arch = "wasm32"))]
+use runtime::ffi_runtime;
 
 /// Logging verbosity level exposed to FFI consumers.
 #[derive(Debug, Clone, Copy, uniffi::Enum)]
@@ -43,8 +49,8 @@ impl From<LogLevel> for log::LevelFilter {
     fn from(level: LogLevel) -> Self {
         match level {
             LogLevel::Error => log::LevelFilter::Error,
-            LogLevel::Warn  => log::LevelFilter::Warn,
-            LogLevel::Info  => log::LevelFilter::Info,
+            LogLevel::Warn => log::LevelFilter::Warn,
+            LogLevel::Info => log::LevelFilter::Info,
             LogLevel::Debug => log::LevelFilter::Debug,
             LogLevel::Trace => log::LevelFilter::Trace,
         }
@@ -158,6 +164,15 @@ impl_db_record!(
     db_prefix = DbKeyPrefix::LastActiveFederation,
 );
 
+/// A federation's configuration and identity, fetched over the network
+/// without joining it. Lets a caller show the user what they are about to
+/// join (name, guardians, modules, ...) before committing.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FederationPreview {
+    pub federation_id: String,
+    pub config: ClientConfig,
+}
+
 #[derive(Debug, uniffi::Object)]
 pub struct Client {
     handle: ClientHandleArc,
@@ -183,7 +198,13 @@ impl Client {
         debug!("Client::lightning federation_id={}", self.federation_id);
         self.handle
             .get_first_module_arc::<LightningClientModule>()
-            .map_err(|e| { error!("Client::lightning error federation_id={}: {}", self.federation_id, e); err(e) })
+            .map_err(|e| {
+                error!(
+                    "Client::lightning error federation_id={}: {}",
+                    self.federation_id, e
+                );
+                err(e)
+            })
     }
 
     /// Typed Mint module client for this federation.
@@ -191,7 +212,13 @@ impl Client {
         debug!("Client::mint federation_id={}", self.federation_id);
         self.handle
             .get_first_module_arc::<fedimint_mint_client::MintClientModule>()
-            .map_err(|e| { error!("Client::mint error federation_id={}: {}", self.federation_id, e); err(e) })
+            .map_err(|e| {
+                error!(
+                    "Client::mint error federation_id={}: {}",
+                    self.federation_id, e
+                );
+                err(e)
+            })
     }
 
     /// Typed Wallet module client for this federation.
@@ -199,7 +226,13 @@ impl Client {
         debug!("Client::wallet federation_id={}", self.federation_id);
         self.handle
             .get_first_module_arc::<fedimint_wallet_client::WalletClientModule>()
-            .map_err(|e| { error!("Client::wallet error federation_id={}: {}", self.federation_id, e); err(e) })
+            .map_err(|e| {
+                error!(
+                    "Client::wallet error federation_id={}: {}",
+                    self.federation_id, e
+                );
+                err(e)
+            })
     }
 
     /// Typed Meta module client for this federation.
@@ -207,7 +240,49 @@ impl Client {
         debug!("Client::meta federation_id={}", self.federation_id);
         self.handle
             .get_first_module_arc::<fedimint_meta_client::MetaClientModule>()
-            .map_err(|e| { error!("Client::meta error federation_id={}: {}", self.federation_id, e); err(e) })
+            .map_err(|e| {
+                error!(
+                    "Client::meta error federation_id={}: {}",
+                    self.federation_id, e
+                );
+                err(e)
+            })
+    }
+}
+
+// `ClientHandle::drop` gracefully shuts down the federation client's
+// executor and task group, but it does so *synchronously*, by blocking on
+// `tokio::runtime::Handle::current()` — which panics if the dropping thread
+// has no ambient Tokio runtime at all. On Android, the last `Arc<Client>`
+// reference is very commonly dropped from the `android_cleaner` GC cleaner
+// thread (when a caller forgets to call `close()`) or from whatever plain
+// native thread called `close()` directly, neither of which ever has a
+// Tokio runtime entered. Combined with this crate's `panic = "abort"`
+// profile, that panic would take down the whole host process.
+//
+// To avoid this, never let the *last* `ClientHandleArc` drop naturally on
+// an arbitrary thread: clone it out first and hand it to our dedicated
+// multi-threaded `ffi_runtime`, whose worker threads always have a Tokio
+// context. `Runtime::spawn` (unlike `tokio::spawn`/`Handle::current()`) can
+// be called from any thread, so this is safe here regardless of what thread
+// is doing the dropping.
+//
+// After this function returns, the struct's normal field-drop glue runs and
+// drops our original clone, bringing the count back down to just the one
+// handed to the spawned task — so `ClientHandle`'s own `Drop` never actually
+// executes on this (potentially runtime-less) thread.
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for Client {
+    fn drop(&mut self) {
+        let handle = self.handle.clone();
+        ffi_runtime().spawn(async move {
+            if let Ok(handle) = Arc::try_unwrap(handle) {
+                handle.shutdown().await;
+            }
+            // Otherwise another reference (e.g. the SDK's client cache, or
+            // one returned by `Client::client()`) is still alive; leave it
+            // to whichever owner drops it last.
+        });
     }
 }
 
@@ -219,12 +294,10 @@ pub struct FedimintSDK {
     preview_cache: std::sync::Mutex<Option<ClientPreview>>,
 }
 
-#[uniffi::export(async_runtime = "tokio")]
 impl FedimintSDK {
     /// Initialize the SDK, opening the unified database at `db_path`. A
     /// mnemonic must be set explicitly via `set_mnemonic` or `generate_mnemonic`
     /// before joining federations.
-    #[uniffi::constructor]
     pub async fn new(db_path: String) -> Result<Arc<Self>, FedimintError> {
         install_android_panic_hook();
 
@@ -249,11 +322,15 @@ impl FedimintSDK {
         info!("FedimintSDK::new completed successfully");
         Ok(Arc::new(sdk))
     }
+}
+
+ffi_export_async! {
+impl FedimintSDK {
 
     /// Set the 12-word mnemonic backing all federation wallets.
     ///
     /// This can only be called once for a given database.
-    pub async fn set_mnemonic(&self, words: Vec<String>) -> Result<(), FedimintError> {
+    pub async fn set_mnemonic(self: Arc<Self>, words: Vec<String>) -> Result<(), FedimintError> {
         let phrase = words.join(" ");
         let mnemonic = Mnemonic::from_str(&phrase)
             .context("Invalid mnemonic phrase")
@@ -269,7 +346,7 @@ impl FedimintSDK {
     }
 
     /// Generate a new 12-word BIP39 mnemonic for the SDK.
-    pub async fn generate_mnemonic(&self) -> Result<Vec<String>, FedimintError> {
+    pub async fn generate_mnemonic(self: Arc<Self>) -> Result<Vec<String>, FedimintError> {
         if let Some(existing) = self.read_mnemonic().await.map_err(err)? {
             debug!("FedimintSDK::generate_mnemonic returning existing mnemonic");
             return Ok(mnemonic_to_words(&existing));
@@ -291,13 +368,13 @@ impl FedimintSDK {
     }
 
     /// Check whether the SDK mnemonic has already been set.
-    pub async fn has_mnemonic_set(&self) -> Result<bool, FedimintError> {
+    pub async fn has_mnemonic_set(self: Arc<Self>) -> Result<bool, FedimintError> {
         let result = self.read_mnemonic().await.map_err(err)?.is_some();
         Ok(result)
     }
 
     /// Return the 12-word mnemonic backing all federation wallets.
-    pub async fn get_mnemonic(&self) -> Result<Vec<String>, FedimintError> {
+    pub async fn get_mnemonic(self: Arc<Self>) -> Result<Vec<String>, FedimintError> {
         let mnemonic = self
             .read_mnemonic()
             .await
@@ -307,7 +384,9 @@ impl FedimintSDK {
         Ok(mnemonic.words().map(|w| w.to_string()).collect())
     }
 
-    async fn preview_federation(&self, invite_code: String) -> Result<String, FedimintError> {
+    /// Fetch a federation's configuration over the network without joining
+    /// it, so the caller can show the user what they're about to join.
+    pub async fn preview_federation(self: Arc<Self>, invite_code: String) -> Result<FederationPreview, FedimintError> {
         info!("FedimintSDK::preview_federation");
         let invite = InviteCode::from_str(&invite_code)
             .map_err(|e| { error!("FedimintSDK::preview_federation invalid invite code: {}", e); err(e) })?;
@@ -320,21 +399,23 @@ impl FedimintSDK {
             .await
             .map_err(|e| { error!("FedimintSDK::preview_federation network error federation_id={}: {}", federation_id, e); err(e) })?;
 
-        let json_config = preview.config().to_json();
-        *self.preview_cache.lock().unwrap() = Some(preview);
+        let config = preview.config().clone();
+        *self
+            .preview_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(preview);
 
-        let result = serde_json::json!({
-            "config": json_config,
-            "federation_id": federation_id.to_string(),
-        });
         info!("FedimintSDK::preview_federation completed federation_id={}", federation_id);
-        Ok(result.to_string())
+        Ok(FederationPreview {
+            federation_id: federation_id.to_string(),
+            config,
+        })
     }
 
     /// Join (or recover) a federation from an invite code. Returns the
     /// resulting per-federation `Wallet`. If a wallet for that federation is
     /// already loaded, it is returned directly.
-    pub async fn join_federation(&self, invite_code: String) -> Result<Arc<Client>, FedimintError> {
+    pub async fn join_federation(self: Arc<Self>, invite_code: String) -> Result<Arc<Client>, FedimintError> {
         info!("FedimintSDK::join_federation");
         let invite = InviteCode::from_str(&invite_code)
             .map_err(|e| { error!("FedimintSDK::join_federation invalid invite code: {}", e); err(e) })?;
@@ -379,10 +460,16 @@ impl FedimintSDK {
             )
         } else {
             info!("FedimintSDK::join_federation fresh join, downloading backup federation_id={}", federation_id);
-            let preview = builder
-                .preview(self.connectors.clone(), &invite)
-                .await
-                .map_err(|e| { error!("FedimintSDK::join_federation preview error federation_id={}: {}", federation_id, e); err(e) })?;
+            let preview = match self.take_cached_preview(&federation_id) {
+                Some(preview) => {
+                    debug!("FedimintSDK::join_federation reusing cached preview federation_id={}", federation_id);
+                    preview
+                }
+                None => builder
+                    .preview(self.connectors.clone(), &invite)
+                    .await
+                    .map_err(|e| { error!("FedimintSDK::join_federation preview error federation_id={}: {}", federation_id, e); err(e) })?,
+            };
 
             #[allow(deprecated)]
             let backup = preview
@@ -416,7 +503,7 @@ impl FedimintSDK {
                         .map_err(|e| { error!("FedimintSDK::join_federation join error federation_id={}: {}", federation_id, e); err(e) })?,
                 )
             }
-        };  
+        };
 
         let client = Arc::new(Client {
             handle: client,
@@ -439,7 +526,7 @@ impl FedimintSDK {
     /// List all previously joined federation IDs from the database.
     /// This is instant — no network or client initialization happens.
     /// Call `open_client` to actually connect to a specific federation.
-    pub async fn list_clients(&self) -> Vec<String> {
+    pub async fn list_clients(self: Arc<Self>) -> Vec<String> {
         let mut dbtx = self.db.begin_transaction_nc().await;
         let ids: Vec<String> = dbtx
             .get_value(&JoinedFederationsKey)
@@ -456,7 +543,7 @@ impl FedimintSDK {
     /// Caches the open client so subsequent calls are instant.
     /// Also records this as the last-active federation for auto-restore on
     /// the next app launch.
-    pub async fn open_client(&self, federation_id: String) -> Result<Arc<Client>, FedimintError> {
+    pub async fn open_client(self: Arc<Self>, federation_id: String) -> Result<Arc<Client>, FedimintError> {
         info!("FedimintSDK::open_client federation_id={}", federation_id);
         let id = FederationId::from_str(&federation_id)
             .map_err(|e| { error!("FedimintSDK::open_client invalid federation_id={}: {}", federation_id, e); err(e) })?;
@@ -517,7 +604,7 @@ impl FedimintSDK {
 
     /// Returns the federation ID that was last set as active, if any.
     /// Use this on startup to auto-open the previously active wallet.
-    pub async fn get_last_active_federation(&self) -> Option<String> {
+    pub async fn get_last_active_federation(self: Arc<Self>) -> Option<String> {
         debug!("FedimintSDK::get_last_active_federation");
         let mut dbtx = self.db.begin_transaction_nc().await;
         let result = dbtx
@@ -527,6 +614,7 @@ impl FedimintSDK {
         info!("FedimintSDK::get_last_active_federation -> {:?}", result);
         result
     }
+}
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -594,6 +682,22 @@ impl FedimintSDK {
         self.db.with_prefix(prefix)
     }
 
+    /// Consumes the cached preview from a prior `preview_federation` call if
+    /// it matches `federation_id`, saving a redundant network round-trip in
+    /// the common "preview, then join" UX flow. Leaves (and doesn't clear)
+    /// the cache when there's no match, since it may still be consumed by a
+    /// join of whatever federation it does belong to.
+    fn take_cached_preview(&self, federation_id: &FederationId) -> Option<ClientPreview> {
+        let mut cache = self
+            .preview_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let matches = cache
+            .as_ref()
+            .is_some_and(|preview| preview.config().calculate_federation_id() == *federation_id);
+        matches.then(|| cache.take()).flatten()
+    }
+
     async fn read_mnemonic(&self) -> anyhow::Result<Option<Mnemonic>> {
         let mut dbtx = self.db.begin_transaction_nc().await;
         match dbtx.get_value(&MnemonicKey).await {
@@ -615,7 +719,10 @@ impl FedimintSDK {
 
     async fn persist_joined_federation(&self, federation_id: &FederationId) -> anyhow::Result<()> {
         let mut dbtx = self.db.begin_transaction().await;
-        let mut ids = dbtx.get_value(&JoinedFederationsKey).await.unwrap_or_default();
+        let mut ids = dbtx
+            .get_value(&JoinedFederationsKey)
+            .await
+            .unwrap_or_default();
         if !ids.contains(federation_id) {
             ids.push(*federation_id);
             dbtx.insert_entry(&JoinedFederationsKey, &ids).await;
@@ -624,9 +731,13 @@ impl FedimintSDK {
         Ok(())
     }
 
-    async fn write_last_active_federation(&self, federation_id: &FederationId) -> anyhow::Result<()> {
+    async fn write_last_active_federation(
+        &self,
+        federation_id: &FederationId,
+    ) -> anyhow::Result<()> {
         let mut dbtx = self.db.begin_transaction().await;
-        dbtx.insert_entry(&LastActiveFederationKey, federation_id).await;
+        dbtx.insert_entry(&LastActiveFederationKey, federation_id)
+            .await;
         dbtx.commit_tx().await;
         Ok(())
     }
